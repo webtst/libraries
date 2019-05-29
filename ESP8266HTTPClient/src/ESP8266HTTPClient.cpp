@@ -98,6 +98,9 @@ void HTTPClient::clear()
     _returnCode = 0;
     _size = -1;
     _headers = "";
+    for(size_t i = 0; i < _headerKeysCount; i++) {
+        _currentHeaders[i].value = "";
+    }
 }
 
 
@@ -112,7 +115,7 @@ bool HTTPClient::begin(String url, String httpsFingerprint)
         return false;
     }
     _transportTraits = TransportTraitsPtr(new TLSTraits(httpsFingerprint));
-    DEBUG_HTTPCLIENT("[HTTP-Client][begin] httpsFingerprint: %s\n", httpsFingerprint.c_str());
+    DEBUG_HTTPCLIENT("[HTTP-Client][begin] httpsFingerprint: %s\r\n", httpsFingerprint.c_str());
     return true;
 }
 
@@ -133,13 +136,13 @@ bool HTTPClient::begin(String url)
 
 bool HTTPClient::beginInternal(String url, const char* expectedProtocol)
 {
-    DEBUG_HTTPCLIENT("[HTTP-Client][begin] url: %s\n", url.c_str());
+    DEBUG_HTTPCLIENT("[HTTP-Client][begin] url: %s\r\n", url.c_str());
     clear();
 
     // check for : (http: or https:
     int index = url.indexOf(':');
     if(index < 0) {
-        DEBUG_HTTPCLIENT("[HTTP-Client][begin] failed to parse protocol\n");
+        DEBUG_HTTPCLIENT("[HTTP-Client][begin] failed to parse protocol\r\n");
         return false;
     }
 
@@ -171,10 +174,10 @@ bool HTTPClient::beginInternal(String url, const char* expectedProtocol)
     _uri = url;
 
     if (_protocol != expectedProtocol) {
-        DEBUG_HTTPCLIENT("[HTTP-Client][begin] unexpected protocol: %s, expected %s\n", _protocol.c_str(), expectedProtocol);
+        DEBUG_HTTPCLIENT("[HTTP-Client][begin] unexpected protocol: %s, expected %s\r\n", _protocol.c_str(), expectedProtocol);
         return false;
     }
-    DEBUG_HTTPCLIENT("[HTTP-Client][begin] host: %s port: %d url: %s\n", _host.c_str(), _port, _uri.c_str());
+    DEBUG_HTTPCLIENT("[HTTP-Client][begin] host: %s port: %d url: %s\r\n", _host.c_str(), _port, _uri.c_str());
     return true;
 }
 
@@ -185,7 +188,7 @@ bool HTTPClient::begin(String host, uint16_t port, String uri)
     _port = port;
     _uri = uri;
     _transportTraits = TransportTraitsPtr(new TransportTraits());
-    DEBUG_HTTPCLIENT("[HTTP-Client][begin] host: %s port: %d uri: %s\n", host.c_str(), port, uri.c_str());
+    DEBUG_HTTPCLIENT("[HTTP-Client][begin] host: %s port: %d uri: %s\r\n", host.c_str(), port, uri.c_str());
     return true;
 }
 
@@ -209,7 +212,7 @@ bool HTTPClient::begin(String host, uint16_t port, String uri, String httpsFinge
         return false;
     }
     _transportTraits = TransportTraitsPtr(new TLSTraits(httpsFingerprint));
-    DEBUG_HTTPCLIENT("[HTTP-Client][begin] host: %s port: %d url: %s httpsFingerprint: %s\n", host.c_str(), port, uri.c_str(), httpsFingerprint.c_str());
+    DEBUG_HTTPCLIENT("[HTTP-Client][begin] host: %s port: %d url: %s httpsFingerprint: %s\r\n", host.c_str(), port, uri.c_str(), httpsFingerprint.c_str());
     return true;
 }
 
@@ -221,19 +224,19 @@ void HTTPClient::end(void)
 {
     if(connected()) {
         if(_tcp->available() > 0) {
-            DEBUG_HTTPCLIENT("[HTTP-Client][end] still data in buffer (%d), clean up.\n", _tcp->available());
+            DEBUG_HTTPCLIENT("[HTTP-Client][end] still data in buffer (%d), clean up.\r\n", _tcp->available());
             while(_tcp->available() > 0) {
                 _tcp->read();
             }
         }
         if(_reuse && _canReuse) {
-            DEBUG_HTTPCLIENT("[HTTP-Client][end] tcp keep open for reuse\n");
+            DEBUG_HTTPCLIENT("[HTTP-Client][end] tcp keep open for reuse\r\n");
         } else {
-            DEBUG_HTTPCLIENT("[HTTP-Client][end] tcp stop\n");
+            DEBUG_HTTPCLIENT("[HTTP-Client][end] tcp stop\r\n");
             _tcp->stop();
         }
     } else {
-        DEBUG_HTTPCLIENT("[HTTP-Client][end] tcp is closed\n");
+        DEBUG_HTTPCLIENT("[HTTP-Client][end] tcp is closed\r\n");
     }
 }
 
@@ -394,8 +397,9 @@ int HTTPClient::sendRequest(const char * type, uint8_t * payload, size_t size)
     }
 
     if(payload && size > 0) {
-        addHeader(F("Content-Length"), String(size));
+        addHeader(F("Content-Length"), String(size));        
     }
+    addHeader(F("Cookie"),buildCookies());
 
     // send Header
     if(!sendHeader(type)) {
@@ -433,8 +437,9 @@ int HTTPClient::sendRequest(const char * type, Stream * stream, size_t size)
     }
 
     if(size > 0) {
-        addHeader("Content-Length", String(size));
+        addHeader(F("Content-Length"), String(size));        
     }
+    addHeader(F("Cookie"),buildCookies());
 
     // send Header
     if(!sendHeader(type)) {
@@ -488,11 +493,11 @@ int HTTPClient::sendRequest(const char * type, Stream * stream, size_t size)
 
                 // are all Bytes a writen to stream ?
                 if(bytesWrite != bytesRead) {
-                    DEBUG_HTTPCLIENT("[HTTP-Client][sendRequest] short write, asked for %d but got %d retry...\n", bytesRead, bytesWrite);
+                    DEBUG_HTTPCLIENT("[HTTP-Client][sendRequest] short write, asked for %d but got %d retry...\r\n", bytesRead, bytesWrite);
 
                     // check for write error
                     if(_tcp->getWriteError()) {
-                        DEBUG_HTTPCLIENT("[HTTP-Client][sendRequest] stream write error %d\n", _tcp->getWriteError());
+                        DEBUG_HTTPCLIENT("[HTTP-Client][sendRequest] stream write error %d\r\n", _tcp->getWriteError());
 
                         //reset write error for retry
                         _tcp->clearWriteError();
@@ -509,7 +514,7 @@ int HTTPClient::sendRequest(const char * type, Stream * stream, size_t size)
 
                     if(bytesWrite != leftBytes) {
                         // failed again
-                        DEBUG_HTTPCLIENT("[HTTP-Client][sendRequest] short write, asked for %d but got %d failed.\n", leftBytes, bytesWrite);
+                        DEBUG_HTTPCLIENT("[HTTP-Client][sendRequest] short write, asked for %d but got %d failed.\r\n", leftBytes, bytesWrite);
                         free(buff);
                         return returnError(HTTPC_ERROR_SEND_PAYLOAD_FAILED);
                     }
@@ -517,7 +522,7 @@ int HTTPClient::sendRequest(const char * type, Stream * stream, size_t size)
 
                 // check for write error
                 if(_tcp->getWriteError()) {
-                    DEBUG_HTTPCLIENT("[HTTP-Client][sendRequest] stream write error %d\n", _tcp->getWriteError());
+                    DEBUG_HTTPCLIENT("[HTTP-Client][sendRequest] stream write error %d\r\n", _tcp->getWriteError());
                     free(buff);
                     return returnError(HTTPC_ERROR_SEND_PAYLOAD_FAILED);
                 }
@@ -536,15 +541,15 @@ int HTTPClient::sendRequest(const char * type, Stream * stream, size_t size)
         free(buff);
 
         if(size && (int) size != bytesWritten) {
-            DEBUG_HTTPCLIENT("[HTTP-Client][sendRequest] Stream payload bytesWritten %d and size %d mismatch!.\n", bytesWritten, size);
+            DEBUG_HTTPCLIENT("[HTTP-Client][sendRequest] Stream payload bytesWritten %d and size %d mismatch!.\r\n", bytesWritten, size);
             DEBUG_HTTPCLIENT("[HTTP-Client][sendRequest] ERROR SEND PAYLOAD FAILED!");
             return returnError(HTTPC_ERROR_SEND_PAYLOAD_FAILED);
         } else {
-            DEBUG_HTTPCLIENT("[HTTP-Client][sendRequest] Stream payload written: %d\n", bytesWritten);
+            DEBUG_HTTPCLIENT("[HTTP-Client][sendRequest] Stream payload written: %d\r\n", bytesWritten);
         }
 
     } else {
-        DEBUG_HTTPCLIENT("[HTTP-Client][sendRequest] too less ram! need %d\n", HTTP_TCP_BUFFER_SIZE);
+        DEBUG_HTTPCLIENT("[HTTP-Client][sendRequest] too less ram! need %d\r\n", HTTP_TCP_BUFFER_SIZE);
         return returnError(HTTPC_ERROR_TOO_LESS_RAM);
     }
 
@@ -571,7 +576,7 @@ WiFiClient& HTTPClient::getStream(void)
         return *_tcp;
     }
 
-    DEBUG_HTTPCLIENT("[HTTP-Client] getStream: not connected\n");
+    DEBUG_HTTPCLIENT("[HTTP-Client] getStream: not connected\r\n");
     static WiFiClient empty;
     return empty;
 }
@@ -586,7 +591,7 @@ WiFiClient* HTTPClient::getStreamPtr(void)
         return _tcp.get();
     }
 
-    DEBUG_HTTPCLIENT("[HTTP-Client] getStreamPtr: not connected\n");
+    DEBUG_HTTPCLIENT("[HTTP-Client] getStreamPtr: not connected\r\n");
     return nullptr;
 }
 
@@ -634,7 +639,7 @@ int HTTPClient::writeToStream(Stream * stream)
             // read size of chunk
             len = (uint32_t) strtol((const char *) chunkHeader.c_str(), NULL, 16);
             size += len;
-            DEBUG_HTTPCLIENT("[HTTP-Client] read chunk len: %d\n", len);
+            DEBUG_HTTPCLIENT("[HTTP-Client] read chunk len: %d\r\n", len);
 
             // data left?
             if(len > 0) {
@@ -686,7 +691,7 @@ String HTTPClient::getString(void)
     if(_size) {
         // try to reserve needed memmory
         if(!sstring.reserve((_size + 1))) {
-            DEBUG_HTTPCLIENT("[HTTP-Client][getString] not enough memory to reserve a string! need: %d\n", (_size + 1));
+            DEBUG_HTTPCLIENT("[HTTP-Client][getString] not enough memory to reserve a string! need: %d\r\n", (_size + 1));
             return "";
         }
     }
@@ -819,6 +824,65 @@ bool HTTPClient::hasHeader(const char* name)
     return false;
 }
 
+
+void HTTPClient::collectCookies(const char* cookieKeys[], const size_t cookieKeysCount) {
+   _cookieKeysCount = cookieKeysCount;
+  if (_currentCookies)
+     delete[]_currentCookies;
+  _currentCookies = new RequestArgument[_cookieKeysCount];
+  for (int i = 0; i < _cookieKeysCount; i++){
+    _currentCookies[i].key = cookieKeys[i];
+  }
+}
+
+String HTTPClient::cookie(int i) {
+  if (i < _cookieKeysCount)
+    return _currentCookies[i].value;
+  return "";
+}
+
+String HTTPClient::cookieName(int i) {
+  if (i < _cookieKeysCount)
+    return _currentCookies[i].key;
+  return "";
+}
+
+int HTTPClient::cookies() {
+  return _cookieKeysCount;
+}
+
+bool HTTPClient::hasCookie(String name) {
+  for (int i = 0; i < _cookieKeysCount; ++i) {
+    if ((_currentCookies[i].key.equalsIgnoreCase(name)) &&  (_currentCookies[i].value.length() > 0))
+      return true;
+  }
+  return false;
+}
+
+bool HTTPClient::updateCookie(String name, String value){
+    for (int i = 0; i < _cookieKeysCount; i++)
+    {
+        if (_currentCookies[i].key.equalsIgnoreCase(name)){
+            _currentCookies[i].value = value;
+            return true;
+        }
+    }
+    return false;
+}
+String HTTPClient::buildCookies(){
+    String result = "";
+    for (int i = 0; i < _cookieKeysCount; i++){
+        if(result != "" && _currentCookies[i].value != "")result += "; ";
+        if(_currentCookies[i].value != ""){
+            result += _currentCookies[i].key;
+            result += "=";
+            result += _currentCookies[i].value;
+        }
+        
+    }
+    return result;
+}
+
 /**
  * init TCP connection and handle ssl verify if needed
  * @return true if connection is ok
@@ -827,7 +891,7 @@ bool HTTPClient::connect(void)
 {
 
     if(connected()) {
-        DEBUG_HTTPCLIENT("[HTTP-Client] connect. already connected, try reuse!\n");
+        DEBUG_HTTPCLIENT("[HTTP-Client] connect. already connected, try reuse!\r\n");
         while(_tcp->available() > 0) {
             _tcp->read();
         }
@@ -835,7 +899,7 @@ bool HTTPClient::connect(void)
     }
 
     if (!_transportTraits) {
-        DEBUG_HTTPCLIENT("[HTTP-Client] connect: HTTPClient::begin was not called or returned error\n");
+        DEBUG_HTTPCLIENT("[HTTP-Client] connect: HTTPClient::begin was not called or returned error\r\n");
         return false;
     }
 
@@ -843,14 +907,14 @@ bool HTTPClient::connect(void)
     _tcp->setTimeout(_tcpTimeout);
 
     if(!_tcp->connect(_host.c_str(), _port)) {
-        DEBUG_HTTPCLIENT("[HTTP-Client] failed connect to %s:%u\n", _host.c_str(), _port);
+        DEBUG_HTTPCLIENT("[HTTP-Client] failed connect to %s:%u\r\n", _host.c_str(), _port);
         return false;
     }
 
-    DEBUG_HTTPCLIENT("[HTTP-Client] connected to %s:%u\n", _host.c_str(), _port);
+    DEBUG_HTTPCLIENT("[HTTP-Client] connected to %s:%u\r\n", _host.c_str(), _port);
 
     if (!_transportTraits->verify(*_tcp, _host.c_str())) {
-        DEBUG_HTTPCLIENT("[HTTP-Client] transport level verify failed\n");
+        DEBUG_HTTPCLIENT("[HTTP-Client] transport level verify failed\r\n");
         _tcp->stop();
         return false;
     }
@@ -910,7 +974,7 @@ bool HTTPClient::sendHeader(const char * type)
 
     header += _headers + "\r\n";
 
-    DEBUG_HTTPCLIENT("[HTTP-Client] sending request header\n-----\n%s-----\n", header.c_str());
+    DEBUG_HTTPCLIENT("[HTTP-Client] sending request header\n-----\n%s-----\r\n", header.c_str());
 
     return (_tcp->write((const uint8_t *) header.c_str(), header.length()) == header.length());
 }
@@ -940,7 +1004,7 @@ int HTTPClient::handleHeaderResponse()
 
             lastDataTime = millis();
 
-            DEBUG_HTTPCLIENT("[HTTP-Client][handleHeaderResponse] RX: '%s'\n", headerLine.c_str());
+            DEBUG_HTTPCLIENT("[HTTP-Client][handleHeaderResponse] RX: '%s'\r\n", headerLine.c_str());
 
             if(headerLine.startsWith("HTTP/1.")) {
                 _returnCode = headerLine.substring(9, headerLine.indexOf(' ', 9)).toInt();
@@ -961,6 +1025,16 @@ int HTTPClient::handleHeaderResponse()
                     transferEncoding = headerValue;
                 }
 
+                if(headerName.equalsIgnoreCase("Transfer-Encoding")) {
+                    transferEncoding = headerValue;
+                }
+
+                if(headerName.equalsIgnoreCase("Set-Cookie")) {
+                    size_t v = headerValue.indexOf('=');
+                    updateCookie(headerValue.substring(0,v),headerValue.substring(v+1,headerValue.indexOf("; ")));
+                    DEBUG_HTTPCLIENT("[HTTP-Client][Set-Cookie] %s: %s\r\n", headerValue.substring(0,v).c_str(),headerValue.substring(v+1,headerValue.indexOf("; ")).c_str());
+                }
+
                 for(size_t i = 0; i < _headerKeysCount; i++) {
                     if(_currentHeaders[i].key.equalsIgnoreCase(headerName)) {
                         _currentHeaders[i].value = headerValue;
@@ -970,14 +1044,14 @@ int HTTPClient::handleHeaderResponse()
             }
 
             if(headerLine == "") {
-                DEBUG_HTTPCLIENT("[HTTP-Client][handleHeaderResponse] code: %d\n", _returnCode);
+                DEBUG_HTTPCLIENT("[HTTP-Client][handleHeaderResponse] code: %d\r\n", _returnCode);
 
                 if(_size > 0) {
-                    DEBUG_HTTPCLIENT("[HTTP-Client][handleHeaderResponse] size: %d\n", _size);
+                    DEBUG_HTTPCLIENT("[HTTP-Client][handleHeaderResponse] size: %d\r\n", _size);
                 }
 
                 if(transferEncoding.length() > 0) {
-                    DEBUG_HTTPCLIENT("[HTTP-Client][handleHeaderResponse] Transfer-Encoding: %s\n", transferEncoding.c_str());
+                    DEBUG_HTTPCLIENT("[HTTP-Client][handleHeaderResponse] Transfer-Encoding: %s\r\n", transferEncoding.c_str());
                     if(transferEncoding.equalsIgnoreCase("chunked")) {
                         _transferEncoding = HTTPC_TE_CHUNKED;
                     } else {
@@ -1056,11 +1130,11 @@ int HTTPClient::writeToStreamDataBlock(Stream * stream, int size)
 
                 // are all Bytes a writen to stream ?
                 if(bytesWrite != bytesRead) {
-                    DEBUG_HTTPCLIENT("[HTTP-Client][writeToStream] short write asked for %d but got %d retry...\n", bytesRead, bytesWrite);
+                    DEBUG_HTTPCLIENT("[HTTP-Client][writeToStream] short write asked for %d but got %d retry...\r\n", bytesRead, bytesWrite);
 
                     // check for write error
                     if(stream->getWriteError()) {
-                        DEBUG_HTTPCLIENT("[HTTP-Client][writeToStreamDataBlock] stream write error %d\n", stream->getWriteError());
+                        DEBUG_HTTPCLIENT("[HTTP-Client][writeToStreamDataBlock] stream write error %d\r\n", stream->getWriteError());
 
                         //reset write error for retry
                         stream->clearWriteError();
@@ -1077,7 +1151,7 @@ int HTTPClient::writeToStreamDataBlock(Stream * stream, int size)
 
                     if(bytesWrite != leftBytes) {
                         // failed again
-                        DEBUG_HTTPCLIENT("[HTTP-Client][writeToStream] short write asked for %d but got %d failed.\n", leftBytes, bytesWrite);
+                        DEBUG_HTTPCLIENT("[HTTP-Client][writeToStream] short write asked for %d but got %d failed.\r\n", leftBytes, bytesWrite);
                         free(buff);
                         return HTTPC_ERROR_STREAM_WRITE;
                     }
@@ -1085,7 +1159,7 @@ int HTTPClient::writeToStreamDataBlock(Stream * stream, int size)
 
                 // check for write error
                 if(stream->getWriteError()) {
-                    DEBUG_HTTPCLIENT("[HTTP-Client][writeToStreamDataBlock] stream write error %d\n", stream->getWriteError());
+                    DEBUG_HTTPCLIENT("[HTTP-Client][writeToStreamDataBlock] stream write error %d\r\n", stream->getWriteError());
                     free(buff);
                     return HTTPC_ERROR_STREAM_WRITE;
                 }
@@ -1103,15 +1177,15 @@ int HTTPClient::writeToStreamDataBlock(Stream * stream, int size)
 
         free(buff);
 
-        DEBUG_HTTPCLIENT("[HTTP-Client][writeToStreamDataBlock] connection closed or file end (written: %d).\n", bytesWritten);
+        DEBUG_HTTPCLIENT("[HTTP-Client][writeToStreamDataBlock] connection closed or file end (written: %d).\r\n", bytesWritten);
 
         if((size > 0) && (size != bytesWritten)) {
-            DEBUG_HTTPCLIENT("[HTTP-Client][writeToStreamDataBlock] bytesWritten %d and size %d mismatch!.\n", bytesWritten, size);
+            DEBUG_HTTPCLIENT("[HTTP-Client][writeToStreamDataBlock] bytesWritten %d and size %d mismatch!.\r\n", bytesWritten, size);
             return HTTPC_ERROR_STREAM_WRITE;
         }
 
     } else {
-        DEBUG_HTTPCLIENT("[HTTP-Client][writeToStreamDataBlock] too less ram! need %d\n", HTTP_TCP_BUFFER_SIZE);
+        DEBUG_HTTPCLIENT("[HTTP-Client][writeToStreamDataBlock] too less ram! need %d\r\n", HTTP_TCP_BUFFER_SIZE);
         return HTTPC_ERROR_TOO_LESS_RAM;
     }
 
@@ -1126,9 +1200,9 @@ int HTTPClient::writeToStreamDataBlock(Stream * stream, int size)
 int HTTPClient::returnError(int error)
 {
     if(error < 0) {
-        DEBUG_HTTPCLIENT("[HTTP-Client][returnError] error(%d): %s\n", error, errorToString(error).c_str());
+        DEBUG_HTTPCLIENT("[HTTP-Client][returnError] error(%d): %s\r\n", error, errorToString(error).c_str());
         if(connected()) {
-            DEBUG_HTTPCLIENT("[HTTP-Client][returnError] tcp stop\n");
+            DEBUG_HTTPCLIENT("[HTTP-Client][returnError] tcp stop\r\n");
             _tcp->stop();
         }
     }

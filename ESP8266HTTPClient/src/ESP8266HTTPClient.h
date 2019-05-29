@@ -174,6 +174,14 @@ public:
     int headers();                     // get header count
     bool hasHeader(const char* name);  // check if header exists
 
+    void collectCookies(const char* cookieKeys[], const size_t cookieKeysCount);
+    String cookie(String name);      // get request cookie value by name
+    String cookie(int i);              // get request cookie value by number
+    String cookieName(int i);          // get request cookie name by number
+    int cookies();                      //Cookie count
+    bool updateCookie(String name, String value); // Udate cookoe value if collected, else return false
+    bool hasCookie(String name);       // check if cookie exists
+    String buildCookies();              // Build Cookie header string
 
     int getSize(void);
 
@@ -218,6 +226,9 @@ protected:
     /// Response handling
     RequestArgument* _currentHeaders = nullptr;
     size_t           _headerKeysCount = 0;
+    size_t           _cookieKeysCount = 0;
+    RequestArgument* _currentCookies = nullptr;
+
 
     int _returnCode = 0;
     int _size = -1;

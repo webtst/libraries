@@ -68,6 +68,10 @@ static char* readBytesWithTimeout(WiFiClient& client, size_t maxLength, size_t& 
 }
 
 bool ESP8266WebServer::_parseRequest(WiFiClient& client) {
+  if(!authCheckIp()){
+      send(403, "text/html", "");
+      return false;
+  }
   // Read the first line of HTTP request
   String req = client.readStringUntil('\r');
   client.readStringUntil('\n');
@@ -86,10 +90,10 @@ bool ESP8266WebServer::_parseRequest(WiFiClient& client) {
   int addr_start = req.indexOf(' ');
   int addr_end = req.indexOf(' ', addr_start + 1);
   if (addr_start == -1 || addr_end == -1) {
-#ifdef DEBUG_ESP_HTTP_SERVER
-    DEBUG_OUTPUT.print("Invalid request: ");
-    DEBUG_OUTPUT.println(req);
-#endif
+    #ifdef DEBUG_ESP_HTTP_SERVER
+        DEBUG_OUTPUT.print("Invalid request: ");
+        DEBUG_OUTPUT.println(req);
+    #endif
     return false;
   }
 
@@ -120,14 +124,14 @@ bool ESP8266WebServer::_parseRequest(WiFiClient& client) {
   }
   _currentMethod = method;
 
-#ifdef DEBUG_ESP_HTTP_SERVER
-  DEBUG_OUTPUT.print("method: ");
-  DEBUG_OUTPUT.print(methodStr);
-  DEBUG_OUTPUT.print(" url: ");
-  DEBUG_OUTPUT.print(url);
-  DEBUG_OUTPUT.print(" search: ");
-  DEBUG_OUTPUT.println(searchStr);
-#endif
+  #ifdef DEBUG_ESP_HTTP_SERVER
+    DEBUG_OUTPUT.print("method: ");
+    DEBUG_OUTPUT.print(methodStr);
+    DEBUG_OUTPUT.print(" url: ");
+    DEBUG_OUTPUT.print(url);
+    DEBUG_OUTPUT.print(" search: ");
+    DEBUG_OUTPUT.println(searchStr);
+  #endif
 
   //attach handler
   RequestHandler* handler;
@@ -209,10 +213,10 @@ bool ESP8266WebServer::_parseRequest(WiFiClient& client) {
           arg.value = String(plainBuf);
         }
 
-  #ifdef DEBUG_ESP_HTTP_SERVER
-        DEBUG_OUTPUT.print("Plain: ");
-        DEBUG_OUTPUT.println(plainBuf);
-  #endif
+        #ifdef DEBUG_ESP_HTTP_SERVER
+              DEBUG_OUTPUT.print("Plain: ");
+              DEBUG_OUTPUT.println(plainBuf);
+        #endif
         free(plainBuf);
       } else {
         // No content - but we can still have arguments in the URL.
@@ -244,12 +248,12 @@ bool ESP8266WebServer::_parseRequest(WiFiClient& client) {
 
       if ( _cookieKeysCount > 0 && headerName.equalsIgnoreCase("Cookie") ) _parseCookies(headerValue);
 
-	  #ifdef DEBUG_ESP_HTTP_SERVER
-	  DEBUG_OUTPUT.print("headerName: ");
-	  DEBUG_OUTPUT.println(headerName);
-	  DEBUG_OUTPUT.print("headerValue: ");
-	  DEBUG_OUTPUT.println(headerValue);
-	  #endif
+  	  #ifdef DEBUG_ESP_HTTP_SERVER
+  	  DEBUG_OUTPUT.print("headerName: ");
+  	  DEBUG_OUTPUT.println(headerName);
+  	  DEBUG_OUTPUT.print("headerValue: ");
+  	  DEBUG_OUTPUT.println(headerValue);
+  	  #endif
 
 	  if (headerName.equalsIgnoreCase("Host")){
         _hostHeader = headerValue;
@@ -259,12 +263,12 @@ bool ESP8266WebServer::_parseRequest(WiFiClient& client) {
   }
   client.flush();
 
-#ifdef DEBUG_ESP_HTTP_SERVER
-  DEBUG_OUTPUT.print("Request: ");
-  DEBUG_OUTPUT.println(url);
-  DEBUG_OUTPUT.print(" Arguments: ");
-  DEBUG_OUTPUT.println(searchStr);
-#endif
+  #ifdef DEBUG_ESP_HTTP_SERVER
+    DEBUG_OUTPUT.print("Request: ");
+    DEBUG_OUTPUT.println(url);
+    DEBUG_OUTPUT.print(" Arguments: ");
+    DEBUG_OUTPUT.println(searchStr);
+  #endif
 
   return true;
 }

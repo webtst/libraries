@@ -63,7 +63,7 @@ ESP8266WebServer::ESP8266WebServer(IPAddress addr, int port)
 ,_ipArray(nullptr)
 ,_wlCount(0)
 ,_wlArray(nullptr)
-,_remote_addr(0)
+,_remote_addr(INADDR_NONE)
 {
 }
 
@@ -87,7 +87,7 @@ ESP8266WebServer::ESP8266WebServer(int port)
 ,_ipArray(nullptr)
 ,_wlCount(0)
 ,_wlArray(nullptr)
-,_remote_addr(0)
+,_remote_addr(INADDR_NONE)
 {
 }
 
@@ -110,50 +110,141 @@ ESP8266WebServer::~ESP8266WebServer() {
 }
 
 /*------ AUTH ------*/
-  void ESP8266WebServer::authSendLogin(String msg=""){
-  	MD5Builder md5;
-  	md5.begin();
-	md5.add(String(millis()).c_str());
-	md5.add(ESP.getChipId());
-	md5.calculate();
-	_formG = md5.toString();
-	sendHeader("cache-control","private, max-age=0, no-cache");
-	send(200 , String	(	
-							F("<!DOCTYPE html><html><head><meta name='charset' content='UTF-8'><title>Login</title></head><body>") +
-							msg +
-							F("<form method='POST' action='/login'><input type='hidden' name='fg' value='") +
-							_formG +
-							F("'><input type='text' name='name'><input type='password' name='pass'><button type='submit'>Login</button></form></body></html>")
-						)
-		);
+void ESP8266WebServer::authSendLogin(String msg){
+  MD5Builder md5;
+  md5.begin();
+  md5.add(String(millis()).c_str());
+  md5.add(String(ESP.getChipId()));
+  md5.calculate();
+  _formG = md5.toString();
+  sendHeader("cache-control","private, max-age=0, no-cache");
+  String str="";
+  str += F("<!DOCTYPE html><html><head><meta name='charset' content='UTF-8'><title>Login</title></head><body><p>");
+  str += msg;
+  str += F("</p><form method='POST' action='/login'><input type='hidden' name='fg' value='");
+  str += _formG;
+  str += F("'><input type='text' name='name'><input type='password' name='pass'><button type='submit'>Login</button></form></body></html>");
+  send(200 , "text/html",  str );
+}
+bool ESP8266WebServer::authCheckIp(){
+  if(_ipCount == 0)return true;
+  for(int i=0 ; i < _ipCount ; i++ ){
+    if(_ipArray[i].check(_currentClient.remoteIP()))return true;
   }
-  bool ESP8266WebServer::authCheckIp(){
-  	for(int i=0 ; i < _ipCount ; i++ ){
-		if(_ipArray[i].check(_currentClient.remoteIP()))return true;
-	}
-	return fasle
+  return false;
+}
+bool ESP8266WebServer::authChechLogin(){
+  for(int i=0 ; i < _wlCount ; i++ ){
+  if(_wlArray[i].equalsIgnoreCase(_currentUri))return true;
+}
+if(_remote_addr != _currentClient.remoteIP() || !cookie("ns-auth").equals(_pwHash)) {
+  authSendLogin("<b>Need auth!</b>");
+  return false;
+}
+return true;
+}
+bool ESP8266WebServer::authReloadWhiteList(JsonArray& arWl){
+  if (_wlArray)
+    delete[]_wlArray;
+  _wlCount = arWl.size();
+  if(_wlCount){
+    _wlArray = new String[_wlCount];
+    for(int i = 0; i <  _wlCount; i++)_wlArray[i] = arWl[i].as<String>();
   }
-  bool ESP8266WebServer::authChechLogin(){
-  	for(int i=0 ; i < _wlCount ; i++ ){
-		if(_wlArray[i].equalsIgnoreCase(_currentUri))return true;
-	}
-	if(_remote_addr != _currentClient.remoteIP() || !cookie("_csfr").equals(_pwHash)) {
-		authSendLogin("<b>Need auth!</b>");
-		return false;
-	}
-	return true;
+  else{
+    _wlCount = 3;
+    _wlArray = new String[_wlCount];
+    _wlArray[0] = "/login";
+    _wlArray[1] = "/favicon.ico";
+    _wlArray[3] = "/description.xml";
   }
-  bool ESP8266WebServer::aithReloadWhiteList(JsonArray& arWl){}
-  bool ESP8266WebServer::aithReloadIpList(JsonArray& arIp){}
-  /*------ /AUTH ------*/
+
+}
+bool ESP8266WebServer::authReloadIpList(JsonArray& arIp){
+  if(arIp.size() <= 0)return false;
+  IPMask* arTmp = new IPMask[arIp.size()];
+  for(int i = 0; i < arIp.size(); i++)
+    if( ! arTmp[i].fromString( arIp[i].as<String>().c_str() ) ){
+      delete[] arTmp;
+      return false;
+    }
+  delete[] _ipArray;
+  _ipArray = arTmp;
+  _ipCount = arIp.size();
+  return true;
+}
+void ESP8266WebServer::_handleLogin(){};
+void ESP8266WebServer::_authSetup(){
+  on(String("/login"),HTTP_ANY,[&](){
+    MD5Builder md5;
+    if( _currentMethod == HTTP_POST ){
+      if(_formG != arg("fg")){
+        authSendLogin("Security check failed");
+        return;
+      }
+      md5.begin();
+      md5.add(String(ESP.getChipId()));
+      md5.add(arg("pass"));
+      md5.calculate();
+
+
+      if(_http_user != arg("name") || !_http_pass.equals("{" + md5.toString()) ){
+        authSendLogin("Username/password incorrect");
+        return;
+      }
+      else {        
+        md5.begin();
+        md5.add((_http_pass + _http_user + millis()).c_str());
+        md5.calculate();
+        _pwHash = md5.toString();
+        _remote_addr = client().remoteIP();
+        sendHeader("Set-Cookie","ns-auth=" + _pwHash);
+        sendHeader("Location","/");
+        send(301, "text/html", "");
+      }
+    }
+    authSendLogin(F("Enter username/password"));
+  });
+}
+void ESP8266WebServer::authUserPass(String user,String pass){
+  MD5Builder md5;
+  _http_user = user;
+  if(pass.startsWith("{")){
+    _http_pass = pass;
+  }
+  else{
+    md5.begin();
+    md5.add(String(ESP.getChipId()));
+    md5.add(pass);
+    md5.calculate();
+    _http_pass = "{" + md5.toString();
+  }
+  
+}
+
+bool ESP8266WebServer::authGetWhiteList(JsonArray& arWl){
+  for (int i = 0; i < _wlCount; i++)
+  {
+    arWl.add(_wlArray[i]);
+  }
+}
+bool ESP8266WebServer::authGetIpList(JsonArray& arIp){
+  for (int i = 0; i < _ipCount; i++)
+  {
+    arIp.add(_ipArray[i].toString());
+  }
+}
+/*------ End AUTH ------*/
 
 void ESP8266WebServer::begin() {
   close();
+  _authSetup();
   _server.begin();
 }
 
 void ESP8266WebServer::begin(uint16_t port) {
   close();
+  _authSetup();
   _server.begin(port);
 }
 
@@ -395,6 +486,9 @@ void ESP8266WebServer::close() {
   _currentStatus = HC_NONE;
   if(!_headerKeysCount)
     collectHeaders(0, 0);
+  if(!_cookieKeysCount)
+    collectCookies(0, 0);
+
 }
 
 void ESP8266WebServer::stop() {
@@ -590,13 +684,14 @@ String ESP8266WebServer::header(String name) {
 }
 
 void ESP8266WebServer::collectHeaders(const char* headerKeys[], const size_t headerKeysCount) {
-  _headerKeysCount = headerKeysCount + 1;
+  _headerKeysCount = headerKeysCount + 2;
   if (_currentHeaders)
      delete[]_currentHeaders;
   _currentHeaders = new RequestArgument[_headerKeysCount];
   _currentHeaders[0].key = FPSTR(AUTHORIZATION_HEADER);
-  for (int i = 1; i < _headerKeysCount; i++){
-    _currentHeaders[i].key = headerKeys[i-1];
+  _currentHeaders[1].key = FPSTR("Cookie");
+  for (int i = 2; i < _headerKeysCount; i++){
+    _currentHeaders[i].key = headerKeys[i-2];
   }
 }
 
@@ -635,17 +730,14 @@ String ESP8266WebServer::cookie(String name) {
 }
 
 void ESP8266WebServer::collectCookies(const char* cookieKeys[], const size_t cookieKeysCount) {
-   _cookieKeysCount = cookieKeysCount;
+   _cookieKeysCount = cookieKeysCount+1;
   if (_currentCookies)
      delete[]_currentCookies;
   _currentCookies = new RequestArgument[_cookieKeysCount];
-  for (int i = 0; i < _cookieKeysCount; i++){
-    _currentCookies[i].key = cookieKeys[i];
+  _currentCookies[0].key = "ns-auth";
+  for (int i = 1; i < _cookieKeysCount; i++){
+    _currentCookies[i].key = cookieKeys[i-1];
   }
-}
-
-void ESP8266WebServer::authCheck( bool (*authFunc)()){
-  _secureHandler = authFunc;
 }
 
 String ESP8266WebServer::cookie(int i) {
@@ -686,23 +778,19 @@ void ESP8266WebServer::onNotFound(THandlerFunction fn) {
 
 void ESP8266WebServer::_handleRequest() {
   bool handled = false;
-    if (!handled) {
-      DEBUG_OUTPUT.println("_currentUri: "+_currentUri);
-      DEBUG_OUTPUT.println("_currentUri: "+_currentUri);
-    }
-  if ( _secureHandler != NULL ) handled = !_secureHandler();
+  handled = !authChechLogin();
   if (!_currentHandler && !handled){
-#ifdef DEBUG_ESP_HTTP_SERVER
-    DEBUG_OUTPUT.println("request handler not found");
-#endif
+    #ifdef DEBUG_ESP_HTTP_SERVER
+        DEBUG_OUTPUT.println("request handler not found");
+    #endif
   }
   else if(!handled){
     handled = _currentHandler->handle(*this, _currentMethod, _currentUri);
-#ifdef DEBUG_ESP_HTTP_SERVER
-    if (!handled) {
-      DEBUG_OUTPUT.println("request handler failed to handle request");
-    }
-#endif
+    #ifdef DEBUG_ESP_HTTP_SERVER
+        if (!handled) {
+          DEBUG_OUTPUT.println("request handler failed to handle request");
+        }
+    #endif
   }
   if (!handled && _notFoundHandler) {
     _notFoundHandler();

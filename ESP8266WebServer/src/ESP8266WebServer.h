@@ -27,6 +27,8 @@
 #include <functional>
 #include <memory>
 #include <ESP8266WiFi.h>
+#include <ArduinoJson.h>
+#include <IPMask.h>
 
 enum HTTPMethod { HTTP_ANY, HTTP_GET, HTTP_POST, HTTP_PUT, HTTP_PATCH, HTTP_DELETE, HTTP_OPTIONS };
 enum HTTPUploadStatus { UPLOAD_FILE_START, UPLOAD_FILE_WRITE, UPLOAD_FILE_END,
@@ -115,7 +117,6 @@ public:
   String cookieName(int i);          // get request cookie name by number
   int cookies();                     // get cookie count
   bool hasCookie(String name);       // check if cookie exists
-  void authCheck( bool (*authFunc)());            // Must return true if secure check successed
   String hostHeader();            // get request host header if available or empty String if not
 
   // send response to the client
@@ -141,8 +142,36 @@ public:
     _streamFileCore(file.size(), file.name(), contentType);
     return _currentClient.write(file);
   }
+  /*------ AUTH ------*/
+  void authSendLogin(String msg="");
+  bool authCheckIp();
+  bool authChechLogin();
+  bool authReloadWhiteList(JsonArray& arWl);
+  bool authReloadIpList(JsonArray& arIp);
+  bool authGetWhiteList(JsonArray& arWl);
+  bool authGetIpList(JsonArray& arWl);
+  //******************************************
+  uint8_t authWhiteListlength(){return _wlCount;}
+  uint8_t authIpListlength(){return _ipCount;}
+  void authSetIp(int n,IPMask msk){if(n < _ipCount && _ipArray != nullptr )_ipArray[n] = msk;}
+  void authSetWl(int n,String url){if(n < _wlCount && _wlArray != nullptr )_wlArray[n] = url;}
+  void authUserPass(String user,String pass);
+  String authGetUser(){return _http_user;}
+  String authGetPass(){return _http_pass;}
+  /*------ /AUTH ------*/
   
 protected:
+  uint8_t _ipCount; // Count of allowed subnet masks
+  IPMask* _ipArray; // Array of allowed subnet masks
+  uint8_t _wlCount; // Count of allowed urls
+  String* _wlArray; // Array of allowed urls
+  String  _pwHash;  // Passwor hash cookie value
+  String  _formG;   // Form secure value
+  String  _http_user;
+  String  _http_pass;
+  IPAddress _remote_addr;
+
+
   virtual size_t _currentClientWrite(const char* b, size_t l) { return _currentClient.write( b, l ); }
   virtual size_t _currentClientWrite_P(PGM_P b, size_t l) { return _currentClient.write_P( b, l ); }
   void _addRequestHandler(RequestHandler* handler);
@@ -159,7 +188,8 @@ protected:
   void _prepareHeader(String& response, int code, const char* content_type, size_t contentLength);
   bool _collectHeader(const char* headerName, const char* headerValue);
   bool _collectCookie(const char* cookieName, const char* cookieValue);
- 
+  void _authSetup();
+  void _handleLogin();
   void _streamFileCore(const size_t fileSize, const String & fileName, const String & contentType);
 
   String _getRandomHexString();
@@ -203,7 +233,7 @@ protected:
   String           _snonce;  // Store noance and opaque for future comparison
   String           _sopaque;
   String           _srealm;  // Store the Auth realm between Calls
-  bool (*_secureHandler) () = NULL;
+
 };
 
 
